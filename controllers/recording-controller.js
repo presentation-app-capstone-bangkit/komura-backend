@@ -1,36 +1,26 @@
 const admin = require("../config/firebase");
 
 exports.getRecordings = async (req, res) => {
-  const { loggedUser } = req.query;
+  const { userId } = req.query;
 
-  if (!loggedUser) {
+  if (!userId) {
     console.error("Logged user is missing in query parameters");
     return res.status(400).send("Logged user is required");
   }
 
   try {
-    console.log("Attempting to fetch user with email:", loggedUser);
-    const userRef = admin.firestore().collection("users");
-    const snapshot = await userRef.where("email", "==", loggedUser).get();
+    console.log("Attempting to fetch user with ID:", userId);
+    const userRef = admin.firestore().collection("users").doc(userId);
+    const userDoc = await userRef.get();
 
-    if (snapshot.empty) {
-      console.error("No user found with email:", loggedUser);
+    if (!userDoc.exists) {
+      console.error("No user found with ID:", userId);
       return res.status(404).send("No User Found.");
     }
 
-    let userId;
-    snapshot.forEach((doc) => {
-      userId = doc.id;
-    });
-
     console.log("User ID found:", userId);
     const recordings = [];
-    const recordingsRef = await admin
-      .firestore()
-      .collection("users")
-      .doc(userId)
-      .collection("recordings")
-      .get();
+    const recordingsRef = await userRef.collection("recordings").get();
 
     recordingsRef.forEach((doc) => {
       recordings.push({
@@ -47,82 +37,60 @@ exports.getRecordings = async (req, res) => {
 };
 
 exports.createRecording = async (req, res) => {
-  const { loggedUser, title, description, audioUrl } = req.body;
-  try {
-    const userRef = admin.firestore().collection("users");
-    const snapshot = await userRef.where("email", "==", loggedUser).get();
+  const { userId, title, description, audioUrl } = req.body;
 
-    if (snapshot.empty) {
+  if (!userId) {
+    return res.status(400).send("User ID is required");
+  }
+
+  try {
+    const userRef = admin.firestore().collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
       return res.status(404).send("No User Found.");
     }
 
-    let userId;
-    snapshot.forEach((doc) => {
-      userId = doc.id;
-    });
+    const recording = {
+      title: title,
+      description: description,
+      audioUrl: audioUrl,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
 
-    try {
-      const recording = {
-        title: title,
-        description: description,
-        audioUrl: audioUrl,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
+    await userRef.collection("recordings").add(recording);
 
-      await admin
-        .firestore()
-        .collection("users")
-        .doc(userId)
-        .collection("recordings")
-        .add(recording);
-
-      // Mengirim respons dan menghentikan eksekusi fungsi
-      return res.status(201).send("Recording created successfully.");
-    } catch (firestoreError) {
-      return res
-        .status(500)
-        .send(`Error saving recording to Firestore: ${firestoreError.message}`);
-    }
+    return res.status(201).send("Recording created successfully.");
   } catch (error) {
-    console.error("Error getting documents: ", error);
-    return res.status(500).send("Error getting documents");
+    console.error("Error saving recording to Firestore: ", error);
+    return res
+      .status(500)
+      .send(`Error saving recording to Firestore: ${error.message}`);
   }
 };
 
 exports.deleteRecording = async (req, res) => {
-  const { loggedUser, recordingId } = req.body;
-  try {
-    const userRef = admin.firestore().collection("users");
-    const snapshot = await userRef.where("email", "==", loggedUser).get();
+  const { userId, recordingId } = req.body;
 
-    if (snapshot.empty) {
+  if (!userId || !recordingId) {
+    return res.status(400).send("User ID and Recording ID are required");
+  }
+
+  try {
+    const userRef = admin.firestore().collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
       return res.status(404).send("No User Found.");
     }
 
-    let userId;
-    snapshot.forEach((doc) => {
-      userId = doc.id;
-    });
+    await userRef.collection("recordings").doc(recordingId).delete();
 
-    try {
-      await admin
-        .firestore()
-        .collection("users")
-        .doc(userId)
-        .collection("recordings")
-        .doc(recordingId)
-        .delete();
-
-      res.status(200).send("Recording deleted successfully.");
-    } catch (firestoreError) {
-      return res
-        .status(500)
-        .send(
-          `Error deleting recording from Firestore: ${firestoreError.message}`
-        );
-    }
+    return res.status(200).send("Recording deleted successfully.");
   } catch (error) {
-    console.error("Error getting documents: ", error);
-    res.status(500).send("Error getting documents");
+    console.error("Error deleting recording from Firestore: ", error);
+    return res
+      .status(500)
+      .send(`Error deleting recording from Firestore: ${error.message}`);
   }
 };

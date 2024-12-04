@@ -37,7 +37,7 @@ exports.getRecordings = async (req, res) => {
 };
 
 exports.createRecording = async (req, res) => {
-  const { userId, title, description, audioUrl } = req.body;
+  const { userId, audioUrl, transcribe, fillers_count, confident } = req.body;
 
   if (!userId) {
     return res.status(400).send("User ID is required");
@@ -52,15 +52,21 @@ exports.createRecording = async (req, res) => {
     }
 
     const recording = {
-      title: title,
-      description: description,
+      userId: userId,
       audioUrl: audioUrl,
+      transcribe: transcribe,
+      fillers_count: fillers_count,
+      confident: confident,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    await userRef.collection("recordings").add(recording);
+    const recordingsRef = await userRef.collection("recordings").add(recording);
 
-    return res.status(201).send("Recording created successfully.");
+    return res.status(201).send({
+      message: "Recording created successfully.",
+      recordingId: recordingsRef.id,
+  });
+
   } catch (error) {
     console.error("Error saving recording to Firestore: ", error);
     return res

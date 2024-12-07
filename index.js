@@ -15,11 +15,14 @@ app.get("/", (req, res) => {
 
 // Auth routes
 app.post("/register", authController.registerUser);
+app.post("/profile-picture", authController.changePictureProfile);
 
 // Recording routes
-app.post("/save-recording", recordingController.createRecording);
-app.post("/delete-recording", recordingController.deleteRecording);
 app.get("/get-recordings", recordingController.getRecordings);
+app.get("/get-recording", recordingController.getRecording);
+app.post("/save-recording", recordingController.createRecording);
+app.post("/rename-recording", recordingController.renameRecording);
+app.post("/delete-recording", recordingController.deleteRecording);
 
 app.listen(8080, () => {
   console.log("Server is running on port 8080");

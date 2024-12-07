@@ -34,12 +34,29 @@ const getAudioAllAudio = async () => {
 
 const deleteAudio = async (fileName) => {
   try {
-    await storage.bucket(bucketName).file(fileName).delete();
-    console.log(`File ${fileName} deleted`);
-    return `File ${fileName} deleted`;
+    console.log(`Attempting to delete file: ${fileName}`);
+
+    // Validasi parameter
+    if (!fileName) {
+      throw new Error("File name is required for deletion.");
+    }
+
+    // Periksa apakah file ada sebelum menghapus
+    const file = storage.bucket(bucketName).file(fileName);
+    const [exists] = await file.exists();
+    if (!exists) {
+      throw new Error(
+        `File ${fileName} does not exist in bucket ${bucketName}.`
+      );
+    }
+
+    // Hapus file
+    await file.delete();
+    console.log(`File ${fileName} deleted successfully.`);
+    return `File ${fileName} deleted successfully.`;
   } catch (err) {
-    console.error("Error deleting file:", err);
-    throw err;
+    console.error("Error deleting file:", err.message || err);
+    throw new Error(`Failed to delete file ${fileName}: ${err.message || err}`);
   }
 };
 

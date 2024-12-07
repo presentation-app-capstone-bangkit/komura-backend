@@ -167,36 +167,65 @@ exports.renameRecording = async (req, res) => {
 exports.deleteRecording = async (req, res) => {
   const { userId, recordingId } = req.body;
 
+  // Validasi parameter
   if (!userId || !recordingId) {
+    console.error("Missing userId or recordingId");
     return res.status(400).send("User ID and Recording ID are required");
   }
 
   try {
+    console.log(`Fetching user: ${userId}, recording: ${recordingId}`);
+
+    // Ambil referensi user dan recording dari Firestore
     const userRef = admin.firestore().collection("users").doc(userId);
     const userDoc = await userRef.get();
 
     if (!userDoc.exists) {
+      console.error(`User not found: ${userId}`);
       return res.status(404).send("No User Found.");
     }
 
-    audioUrl = (
-      await userRef.collection("recordings").doc(recordingId).get()
-    ).data().audioUrl;
+    const recordingRef = userRef.collection("recordings").doc(recordingId);
+    const recordingDoc = await recordingRef.get();
 
-    audioUrl = audioUrl.replace(
+    if (!recordingDoc.exists) {
+      console.error(`Recording not found: ${recordingId}`);
+      return res.status(404).send("Recording not found.");
+    }
+
+    // Ambil URL file audio
+    let audioUrl = recordingDoc.data().audioUrl;
+    console.log("Audio URL:", audioUrl);
+
+    // Validasi URL audio
+    if (
+      !audioUrl.startsWith(
+        "https://storage.googleapis.com/komura-audio-bucket/"
+      )
+    ) {
+      console.error(`Invalid audio URL: ${audioUrl}`);
+      return res.status(400).send("Invalid audio URL format.");
+    }
+
+    // Ekstrak nama file dari URL
+    const fileName = audioUrl.replace(
       "https://storage.googleapis.com/komura-audio-bucket/",
       ""
     );
+    console.log("Audio file to delete:", fileName);
 
-    await deleteAudio(audioUrl);
+    // Hapus file dari Google Cloud Storage
+    await deleteAudio(fileName);
+    console.log("Audio file deleted successfully");
 
-    await userRef.collection("recordings").doc(recordingId).delete();
+    // Hapus data recording dari Firestore
+    await recordingRef.delete();
+    console.log("Firestore document deleted successfully");
 
+    // Kirim respons sukses
     return res.status(200).send("Recording deleted successfully.");
   } catch (error) {
-    console.error("Error deleting recording from Firestore: ", error);
-    return res
-      .status(500)
-      .send(`Error deleting recording from Firestore: ${error.message}`);
+    console.error("Error deleting recording from Firestore or GCS: ", error);
+    return res.status(500).send(`Error deleting recording: ${error.message}`);
   }
 };

@@ -1,4 +1,6 @@
 const admin = require("../config/firebase");
+const { calculateFeedback } = require("../utils/recordingFeedback");
+const { deleteAudio } = require("./audio-bucket-controller");
 
 exports.getRecordings = async (req, res) => {
   const { userId } = req.query;
@@ -36,8 +38,60 @@ exports.getRecordings = async (req, res) => {
   }
 };
 
+exports.getRecording = async (req, res) => {
+  const { userId, recordingId } = req.query;
+
+  if (!userId || !recordingId) {
+    console.error("User ID and Recording ID are required");
+    return res.status(400).send("User ID and Recording ID are required");
+  }
+
+  try {
+    const userRef = admin.firestore().collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      console.error("No user found with ID:", userId);
+      return res.status(404).send("No User Found.");
+    }
+
+    const recordingRef = await userRef
+      .collection("recordings")
+      .doc(recordingId);
+    const recordingDoc = await recordingRef.get();
+
+    if (!recordingDoc.exists) {
+      console.error("No recording found with ID:", recordingId);
+      return res.status(404).send("No Recording Found.");
+    }
+
+    calculateFeedback(recordingDoc.data());
+
+    res.status(200).send({
+      id: recordingDoc.id,
+      ...recordingDoc.data(),
+      feedback: calculateFeedback(recordingDoc.data()),
+    });
+  } catch (error) {
+    console.error("Error getting document:", error);
+    res.status(500).send(`Internal Server Error: ${error.message}`);
+  }
+};
+
 exports.createRecording = async (req, res) => {
-  const { userId, audioUrl, transcribe, fillers_count, confident } = req.body;
+  const {
+    userId,
+    recordingTitle,
+    audioUrl,
+    transcribe,
+    fillers_count,
+    duration,
+    word_count,
+    wpm,
+    pace,
+    confidence,
+    confidentLabel,
+  } = req.body;
 
   if (!userId) {
     return res.status(400).send("User ID is required");
@@ -52,11 +106,16 @@ exports.createRecording = async (req, res) => {
     }
 
     const recording = {
-      userId: userId,
+      recordingTitle: recordingTitle,
       audioUrl: audioUrl,
       transcribe: transcribe,
       fillers_count: fillers_count,
-      confident: confident,
+      duration: duration,
+      word_count: word_count,
+      pace: pace,
+      wpm: wpm,
+      confidence: confidence,
+      confidentLabel: confidentLabel,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
@@ -64,14 +123,44 @@ exports.createRecording = async (req, res) => {
 
     return res.status(201).send({
       message: "Recording created successfully.",
-      recordingId: recordingsRef.id,
-  });
-
+      id: recordingsRef.id,
+      data: recording,
+    });
   } catch (error) {
     console.error("Error saving recording to Firestore: ", error);
     return res
       .status(500)
       .send(`Error saving recording to Firestore: ${error.message}`);
+  }
+};
+
+exports.renameRecording = async (req, res) => {
+  const { userId, recordingId, recordingTitle } = req.body;
+
+  if (!userId || !recordingId || !recordingTitle) {
+    return res
+      .status(400)
+      .send("User ID, Recording ID, and Recording Title are required");
+  }
+
+  try {
+    const userRef = admin.firestore().collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).send("No User Found.");
+    }
+
+    await userRef.collection("recordings").doc(recordingId).update({
+      recordingTitle: recordingTitle,
+    });
+
+    return res.status(200).send("Recording renamed successfully.");
+  } catch (error) {
+    console.error("Error renaming recording in Firestore: ", error);
+    return res
+      .status(500)
+      .send(`Error renaming recording in Firestore: ${error.message}`);
   }
 };
 
@@ -89,6 +178,17 @@ exports.deleteRecording = async (req, res) => {
     if (!userDoc.exists) {
       return res.status(404).send("No User Found.");
     }
+
+    audioUrl = (
+      await userRef.collection("recordings").doc(recordingId).get()
+    ).data().audioUrl;
+
+    audioUrl = audioUrl.replace(
+      "https://storage.googleapis.com/komura-audio-bucket/",
+      ""
+    );
+
+    await deleteAudio(audioUrl);
 
     await userRef.collection("recordings").doc(recordingId).delete();
 
